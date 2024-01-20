@@ -19,7 +19,7 @@ max_sequence_length = 100
 vocab_size = 10000
 embedding_dim = 256
 batch_size = 64
-epochs = 2
+epochs = 5
 
 # Tokenization
 tokenizer = Tokenizer(num_words=vocab_size, oov_token="<OOV>")
@@ -69,7 +69,7 @@ model.fit([X_train, y_input_train], y_train, batch_size=batch_size, epochs=epoch
 loss = model.evaluate([X_test, y_input_test], y_test)
 print(f'Test loss: {loss}')
 
-# Prediction example (this is a placeholder, modify as needed)
+# Prediction example
 # new_problem = 'Your new problem description here'
 # new_problem_seq = tokenizer.texts_to_sequences([new_problem])
 # new_problem_padded = pad_sequences(new_problem_seq, maxlen=max_sequence_length, padding='post')
