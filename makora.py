@@ -1,57 +1,78 @@
 import pandas as pd
+import numpy as np
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.layers import Input, LSTM, Dense, Embedding
+from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Embedding, LSTM, Dense, TimeDistributed
 
-# data
+# Load and prepare the dataset
 problems_df = pd.read_csv('datasets/problems.csv')
 solutions_df = pd.read_csv('datasets/solutions.csv')
+merged_df = pd.merge(problems_df, solutions_df, on='id')
+X = merged_df['description']
+y = merged_df['answer']
 
-# merge datasets based on the 'id' column
-merged_df = pd.merge(problems_df, solutions_df, on='id', how='inner')
+# Define model parameters
+max_sequence_length = 100
+vocab_size = 10000
+embedding_dim = 256
+batch_size = 64
+epochs = 2
 
-# drop rows with missing values in the 'description' or 'answer' columns
-merged_df = merged_df.dropna(subset=['description', 'answer'])
-
-# tokenize and pad sequences
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(merged_df['description'])
-
+# Tokenization
+tokenizer = Tokenizer(num_words=vocab_size, oov_token="<OOV>")
+tokenizer.fit_on_texts(X)
 word_index = tokenizer.word_index
-vocab_size = len(word_index) + 1
-print("Vocabulary Size:", vocab_size)
 
-input_sequences = tokenizer.texts_to_sequences(merged_df['description'])
-target_sequences = tokenizer.texts_to_sequences(merged_df['answer'])
+# Convert text to sequences and pad them
+X_seq = tokenizer.texts_to_sequences(X)
+X_padded = pad_sequences(X_seq, maxlen=max_sequence_length, padding='post')
 
-# pad both input and target sequences to a fixed length
-max_len = max(max(len(seq) for seq in input_sequences), max(len(seq) for seq in target_sequences))
-padded_input_sequences = pad_sequences(input_sequences, maxlen=max_len, padding='post')
-padded_target_sequences = pad_sequences(target_sequences, maxlen=max_len, padding='post')
+# Prepare output data and pad it
+y_seq = tokenizer.texts_to_sequences(y)
+y_padded = pad_sequences(y_seq, maxlen=max_sequence_length, padding='post')
 
-print("Input Sequences Shape:", padded_input_sequences.shape)
-print("Target Sequences Shape (Shifted):", padded_target_sequences.shape)
+# Convert output to one-hot encoding
+y_one_hot = tf.keras.utils.to_categorical(y_padded, num_classes=vocab_size)
 
-# define and train the s2s model
-model = Sequential([
-    Embedding(input_dim=vocab_size, output_dim=100, input_length=max_len, mask_zero=True),
-    LSTM(100, return_sequences=True),
-    LSTM(100, return_sequences=True),  # Use return_sequences for each LSTM layer
-    TimeDistributed(Dense(vocab_size, activation='softmax'))  # TimeDistributed layer for sequence generation
-])
+# Shift the padded sequences by one timestep for the decoder input
+y_seq_shifted = np.roll(y_padded, -1, axis=1)
+y_input_one_hot = tf.keras.utils.to_categorical(y_seq_shifted, num_classes=vocab_size)
 
-model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+# Split the dataset
+X_train, X_test, y_train, y_test = train_test_split(X_padded, y_one_hot, test_size=0.2, random_state=42)
+y_input_train, y_input_test = train_test_split(y_input_one_hot, test_size=0.2, random_state=42)
 
-print("Input Sequences Shape:", padded_input_sequences.shape)
-print("Target Sequences Shape (Shifted):", padded_target_sequences.shape)
+# Build the model
+encoder_inputs = Input(shape=(max_sequence_length,))
+encoder_embedding = Embedding(vocab_size, embedding_dim)(encoder_inputs)
+encoder_outputs, state_h, state_c = LSTM(128, return_state=True)(encoder_embedding)
+encoder_states = [state_h, state_c]
 
-model.fit(padded_input_sequences, padded_target_sequences, epochs=5, batch_size=32)
+decoder_inputs = Input(shape=(max_sequence_length,))
+decoder_embedding = Embedding(vocab_size, embedding_dim)(decoder_inputs)
+decoder_lstm = LSTM(128, return_sequences=True, return_state=True)
+decoder_outputs, _, _ = decoder_lstm(decoder_embedding, initial_state=encoder_states)
+decoder_dense = Dense(vocab_size, activation='softmax')
+decoder_outputs = decoder_dense(decoder_outputs)
 
-# generate predictions
-example_input_sequence = padded_input_sequences[0:1]
-predicted_sequence = model.predict(example_input_sequence)
+model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
 
-# decode the predicted sequence back to text
-predicted_text = ' '.join([tokenizer.index_word[idx] for idx in predicted_sequence[0].argmax(axis=-1) if idx != 0])
-print("Predicted Solution:", predicted_text)
+# Compile the model
+model.compile(optimizer='adam', loss='categorical_crossentropy')
+
+# Training the model
+model.fit([X_train, y_input_train], y_train, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+
+# Evaluate the model
+loss = model.evaluate([X_test, y_input_test], y_test)
+print(f'Test loss: {loss}')
+
+# Prediction example (this is a placeholder, modify as needed)
+# new_problem = 'Your new problem description here'
+# new_problem_seq = tokenizer.texts_to_sequences([new_problem])
+# new_problem_padded = pad_sequences(new_problem_seq, maxlen=max_sequence_length, padding='post')
+# predicted_answer_seq = model.predict([new_problem_padded, np.zeros((1, max_sequence_length))])  # You need to provide dummy input for the decoder
+# Convert predicted sequence to text (requires reverse mapping
