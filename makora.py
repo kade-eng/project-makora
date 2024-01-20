@@ -34,16 +34,15 @@ X_padded = pad_sequences(X_seq, maxlen=max_sequence_length, padding='post')
 y_seq = tokenizer.texts_to_sequences(y)
 y_padded = pad_sequences(y_seq, maxlen=max_sequence_length, padding='post')
 
-# Convert output to one-hot encoding
-y_one_hot = tf.keras.utils.to_categorical(y_padded, num_classes=vocab_size)
-
 # Shift the padded sequences by one timestep for the decoder input
 y_seq_shifted = np.roll(y_padded, -1, axis=1)
-y_input_one_hot = tf.keras.utils.to_categorical(y_seq_shifted, num_classes=vocab_size)
+
+# Convert output to one-hot encoding for the target
+y_one_hot = tf.keras.utils.to_categorical(y_padded, num_classes=vocab_size)
 
 # Split the dataset
 X_train, X_test, y_train, y_test = train_test_split(X_padded, y_one_hot, test_size=0.2, random_state=42)
-y_input_train, y_input_test = train_test_split(y_input_one_hot, test_size=0.2, random_state=42)
+y_input_train, y_input_test, _, _ = train_test_split(y_seq_shifted, y_padded, test_size=0.2, random_state=42)
 
 # Build the model
 encoder_inputs = Input(shape=(max_sequence_length,))
